@@ -3,12 +3,20 @@
 富途 MCP 服务器
 
 本模块将富途API客户端功能暴露为 MCP (Model Context Protocol) 工具，
-允许 AI 助手通过标准化接口访问富途的股票数据。
+允许 AI 助手通过标准化接口访问富途的股票数据和交易功能。
 
 支持的工具:
 - get_watchlist: 获取用户的自选股列表
-- get_stock_quote: 获取股票实时报价 (待实现)
-- get_stock_history: 获取股票历史数据 (待实现)
+- get_stock_quote: 获取股票实时报价信息
+- get_stock_history: 获取股票历史K线数据
+- search_stock: 搜索股票，根据名称或代码查找
+- get_market_snapshot: 获取市场快照和主要指数
+- get_account_info: 获取账户信息（需要交易权限）
+- get_positions: 获取持仓信息（需要交易权限）
+- configure_futu_client: 配置富途API客户端连接
+- get_client_status: 获取客户端连接状态
+
+基于富途OpenAPI文档: https://openapi.futunn.com/futu-api-doc/
 """
 
 import asyncio
@@ -101,6 +109,131 @@ async def list_tools() -> List[Tool]:
             }
         ),
         Tool(
+            name="get_stock_quote",
+            description="获取股票实时报价信息，包括最新价、涨跌幅、成交量等",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "stock_code": {
+                        "type": "string",
+                        "description": "股票代码，如 'AAPL', 'HK.00700', 'SZ.000001'"
+                    },
+                    "market": {
+                        "type": "string",
+                        "description": "市场类型",
+                        "enum": ["US", "HK", "SH", "SZ"],
+                        "default": "US"
+                    }
+                },
+                "required": ["stock_code"],
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="get_stock_history",
+            description="获取股票历史K线数据",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "stock_code": {
+                        "type": "string",
+                        "description": "股票代码，如 'AAPL', 'HK.00700', 'SZ.000001'"
+                    },
+                    "period": {
+                        "type": "string",
+                        "description": "K线周期",
+                        "enum": ["1min", "5min", "15min", "30min", "60min", "day", "week", "month"],
+                        "default": "day"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "获取数据条数，默认30条",
+                        "default": 30,
+                        "minimum": 1,
+                        "maximum": 1000
+                    }
+                },
+                "required": ["stock_code"],
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="search_stock",
+            description="搜索股票，根据股票名称或代码查找相关股票",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "keyword": {
+                        "type": "string",
+                        "description": "搜索关键词，可以是股票名称或代码"
+                    },
+                    "market": {
+                        "type": "string",
+                        "description": "搜索市场",
+                        "enum": ["US", "HK", "SH", "SZ", "ALL"],
+                        "default": "ALL"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回结果数量限制",
+                        "default": 10,
+                        "minimum": 1,
+                        "maximum": 50
+                    }
+                },
+                "required": ["keyword"],
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="get_market_snapshot",
+            description="获取市场快照，包括主要指数和热门股票",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "market": {
+                        "type": "string",
+                        "description": "市场类型",
+                        "enum": ["US", "HK", "CN"],
+                        "default": "US"
+                    }
+                },
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="get_account_info",
+            description="获取账户信息，包括资产、持仓等（需要交易权限）",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account_type": {
+                        "type": "string",
+                        "description": "账户类型",
+                        "enum": ["REAL", "SIMULATE"],
+                        "default": "SIMULATE"
+                    }
+                },
+                "additionalProperties": False
+            }
+        ),
+        Tool(
+            name="get_positions",
+            description="获取持仓信息（需要交易权限）",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account_type": {
+                        "type": "string",
+                        "description": "账户类型",
+                        "enum": ["REAL", "SIMULATE"],
+                        "default": "SIMULATE"
+                    }
+                },
+                "additionalProperties": False
+            }
+        ),
+        Tool(
             name="configure_futu_client",
             description="配置富途API客户端连接参数",
             inputSchema={
@@ -143,6 +276,18 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     try:
         if name == "get_watchlist":
             return await handle_get_watchlist(arguments)
+        elif name == "get_stock_quote":
+            return await handle_get_stock_quote(arguments)
+        elif name == "get_stock_history":
+            return await handle_get_stock_history(arguments)
+        elif name == "search_stock":
+            return await handle_search_stock(arguments)
+        elif name == "get_market_snapshot":
+            return await handle_get_market_snapshot(arguments)
+        elif name == "get_account_info":
+            return await handle_get_account_info(arguments)
+        elif name == "get_positions":
+            return await handle_get_positions(arguments)
         elif name == "configure_futu_client":
             return await handle_configure_client(arguments)
         elif name == "get_client_status":
@@ -302,6 +447,343 @@ async def handle_get_client_status(arguments: Dict[str, Any]) -> List[TextConten
         )]
 
 
+async def handle_get_stock_quote(arguments: Dict[str, Any]) -> List[TextContent]:
+    """处理获取股票实时报价的请求"""
+    stock_code = arguments.get("stock_code")
+    market = arguments.get("market", "US")
+    
+    try:
+        # 确保客户端已初始化
+        client = initialize_futu_client()
+        
+        # 格式化股票代码
+        if market and not stock_code.startswith(market + "."):
+            formatted_code = f"{market}.{stock_code}"
+        else:
+            formatted_code = stock_code
+        
+        # 获取股票报价（这里需要根据实际的FutuClient API调整）
+        # 假设FutuClient有get_stock_quote方法
+        if hasattr(client, 'get_stock_quote'):
+            quote_data = client.get_stock_quote(formatted_code)
+        else:
+            # 如果没有该方法，返回提示信息
+            return [TextContent(
+                type="text",
+                text=f"⚠️ 股票报价功能暂未实现\n\n"
+                     f"请求的股票: {formatted_code}\n"
+                     f"该功能需要在FutuClient中实现get_stock_quote方法"
+            )]
+        
+        if not quote_data:
+            return [TextContent(
+                type="text",
+                text=f"❌ 未能获取股票 {formatted_code} 的报价数据\n\n"
+                     f"可能的原因：\n"
+                     f"1. 股票代码不正确\n"
+                     f"2. 市场未开盘\n"
+                     f"3. 网络连接问题\n"
+                     f"4. API权限不足"
+            )]
+        
+        # 格式化输出
+        text_output = f"📊 {formatted_code} 实时报价\n\n"
+        
+        if isinstance(quote_data, dict):
+            for key, value in quote_data.items():
+                text_output += f"• {key}: {value}\n"
+        else:
+            text_output += f"数据: {quote_data}\n"
+        
+        return [
+            TextContent(type="text", text=text_output),
+            TextContent(
+                type="text",
+                text=f"JSON格式数据:\n```json\n{json.dumps(quote_data, ensure_ascii=False, indent=2)}\n```"
+            )
+        ]
+        
+    except Exception as e:
+        logger.error(f"获取股票报价失败: {e}")
+        return [TextContent(
+            type="text",
+            text=f"获取股票报价失败: {str(e)}"
+        )]
+
+
+async def handle_get_stock_history(arguments: Dict[str, Any]) -> List[TextContent]:
+    """处理获取股票历史数据的请求"""
+    stock_code = arguments.get("stock_code")
+    period = arguments.get("period", "day")
+    count = arguments.get("count", 30)
+    
+    try:
+        # 确保客户端已初始化
+        client = initialize_futu_client()
+        
+        # 获取历史数据（这里需要根据实际的FutuClient API调整）
+        if hasattr(client, 'get_stock_history'):
+            history_data = client.get_stock_history(stock_code, period, count)
+        else:
+            return [TextContent(
+                type="text",
+                text=f"⚠️ 股票历史数据功能暂未实现\n\n"
+                     f"请求参数:\n"
+                     f"• 股票代码: {stock_code}\n"
+                     f"• 周期: {period}\n"
+                     f"• 数量: {count}\n\n"
+                     f"该功能需要在FutuClient中实现get_stock_history方法"
+            )]
+        
+        if not history_data:
+            return [TextContent(
+                type="text",
+                text=f"❌ 未能获取股票 {stock_code} 的历史数据"
+            )]
+        
+        # 格式化输出
+        text_output = f"📈 {stock_code} 历史数据 ({period}, {count}条)\n\n"
+        
+        if isinstance(history_data, list) and len(history_data) > 0:
+            # 显示最近几条数据
+            recent_count = min(5, len(history_data))
+            text_output += f"最近{recent_count}条数据:\n"
+            for i, data in enumerate(history_data[-recent_count:]):
+                text_output += f"{i+1}. {data}\n"
+        else:
+            text_output += f"数据: {history_data}\n"
+        
+        return [
+            TextContent(type="text", text=text_output),
+            TextContent(
+                type="text",
+                text=f"完整JSON数据:\n```json\n{json.dumps(history_data, ensure_ascii=False, indent=2)}\n```"
+            )
+        ]
+        
+    except Exception as e:
+        logger.error(f"获取股票历史数据失败: {e}")
+        return [TextContent(
+            type="text",
+            text=f"获取股票历史数据失败: {str(e)}"
+        )]
+
+
+async def handle_search_stock(arguments: Dict[str, Any]) -> List[TextContent]:
+    """处理搜索股票的请求"""
+    keyword = arguments.get("keyword")
+    market = arguments.get("market", "ALL")
+    limit = arguments.get("limit", 10)
+    
+    try:
+        # 确保客户端已初始化
+        client = initialize_futu_client()
+        
+        # 搜索股票
+        if hasattr(client, 'search_stock'):
+            search_results = client.search_stock(keyword, market, limit)
+        else:
+            return [TextContent(
+                type="text",
+                text=f"⚠️ 股票搜索功能暂未实现\n\n"
+                     f"搜索参数:\n"
+                     f"• 关键词: {keyword}\n"
+                     f"• 市场: {market}\n"
+                     f"• 限制: {limit}\n\n"
+                     f"该功能需要在FutuClient中实现search_stock方法"
+            )]
+        
+        if not search_results:
+            return [TextContent(
+                type="text",
+                text=f"🔍 未找到与 '{keyword}' 相关的股票"
+            )]
+        
+        # 格式化输出
+        text_output = f"🔍 搜索结果: '{keyword}' (市场: {market})\n\n"
+        
+        if isinstance(search_results, list):
+            for i, stock in enumerate(search_results[:limit], 1):
+                text_output += f"{i}. {stock}\n"
+        else:
+            text_output += f"结果: {search_results}\n"
+        
+        return [
+            TextContent(type="text", text=text_output),
+            TextContent(
+                type="text",
+                text=f"JSON格式结果:\n```json\n{json.dumps(search_results, ensure_ascii=False, indent=2)}\n```"
+            )
+        ]
+        
+    except Exception as e:
+        logger.error(f"搜索股票失败: {e}")
+        return [TextContent(
+            type="text",
+            text=f"搜索股票失败: {str(e)}"
+        )]
+
+
+async def handle_get_market_snapshot(arguments: Dict[str, Any]) -> List[TextContent]:
+    """处理获取市场快照的请求"""
+    market = arguments.get("market", "US")
+    
+    try:
+        # 确保客户端已初始化
+        client = initialize_futu_client()
+        
+        # 获取市场快照
+        if hasattr(client, 'get_market_snapshot'):
+            snapshot_data = client.get_market_snapshot(market)
+        else:
+            return [TextContent(
+                type="text",
+                text=f"⚠️ 市场快照功能暂未实现\n\n"
+                     f"请求市场: {market}\n\n"
+                     f"该功能需要在FutuClient中实现get_market_snapshot方法"
+            )]
+        
+        if not snapshot_data:
+            return [TextContent(
+                type="text",
+                text=f"❌ 未能获取 {market} 市场快照数据"
+            )]
+        
+        # 格式化输出
+        text_output = f"📊 {market} 市场快照\n\n"
+        
+        if isinstance(snapshot_data, dict):
+            for key, value in snapshot_data.items():
+                text_output += f"• {key}: {value}\n"
+        else:
+            text_output += f"数据: {snapshot_data}\n"
+        
+        return [
+            TextContent(type="text", text=text_output),
+            TextContent(
+                type="text",
+                text=f"JSON格式数据:\n```json\n{json.dumps(snapshot_data, ensure_ascii=False, indent=2)}\n```"
+            )
+        ]
+        
+    except Exception as e:
+        logger.error(f"获取市场快照失败: {e}")
+        return [TextContent(
+            type="text",
+            text=f"获取市场快照失败: {str(e)}"
+        )]
+
+
+async def handle_get_account_info(arguments: Dict[str, Any]) -> List[TextContent]:
+    """处理获取账户信息的请求"""
+    account_type = arguments.get("account_type", "SIMULATE")
+    
+    try:
+        # 确保客户端已初始化
+        client = initialize_futu_client()
+        
+        # 获取账户信息
+        if hasattr(client, 'get_account_info'):
+            account_data = client.get_account_info(account_type)
+        else:
+            return [TextContent(
+                type="text",
+                text=f"⚠️ 账户信息功能暂未实现\n\n"
+                     f"账户类型: {account_type}\n\n"
+                     f"该功能需要在FutuClient中实现get_account_info方法\n"
+                     f"注意：此功能需要交易权限"
+            )]
+        
+        if not account_data:
+            return [TextContent(
+                type="text",
+                text=f"❌ 未能获取 {account_type} 账户信息\n\n"
+                     f"可能的原因：\n"
+                     f"1. 账户未登录\n"
+                     f"2. 没有交易权限\n"
+                     f"3. 账户类型错误"
+            )]
+        
+        # 格式化输出
+        text_output = f"💰 {account_type} 账户信息\n\n"
+        
+        if isinstance(account_data, dict):
+            for key, value in account_data.items():
+                text_output += f"• {key}: {value}\n"
+        else:
+            text_output += f"数据: {account_data}\n"
+        
+        return [
+            TextContent(type="text", text=text_output),
+            TextContent(
+                type="text",
+                text=f"JSON格式数据:\n```json\n{json.dumps(account_data, ensure_ascii=False, indent=2)}\n```"
+            )
+        ]
+        
+    except Exception as e:
+        logger.error(f"获取账户信息失败: {e}")
+        return [TextContent(
+            type="text",
+            text=f"获取账户信息失败: {str(e)}"
+        )]
+
+
+async def handle_get_positions(arguments: Dict[str, Any]) -> List[TextContent]:
+    """处理获取持仓信息的请求"""
+    account_type = arguments.get("account_type", "SIMULATE")
+    
+    try:
+        # 确保客户端已初始化
+        client = initialize_futu_client()
+        
+        # 获取持仓信息
+        if hasattr(client, 'get_positions'):
+            positions_data = client.get_positions(account_type)
+        else:
+            return [TextContent(
+                type="text",
+                text=f"⚠️ 持仓信息功能暂未实现\n\n"
+                     f"账户类型: {account_type}\n\n"
+                     f"该功能需要在FutuClient中实现get_positions方法\n"
+                     f"注意：此功能需要交易权限"
+            )]
+        
+        if not positions_data:
+            return [TextContent(
+                type="text",
+                text=f"📊 {account_type} 账户暂无持仓\n\n"
+                     f"或者未能获取持仓数据"
+            )]
+        
+        # 格式化输出
+        text_output = f"📊 {account_type} 持仓信息\n\n"
+        
+        if isinstance(positions_data, list):
+            for i, position in enumerate(positions_data, 1):
+                text_output += f"{i}. {position}\n"
+        elif isinstance(positions_data, dict):
+            for key, value in positions_data.items():
+                text_output += f"• {key}: {value}\n"
+        else:
+            text_output += f"数据: {positions_data}\n"
+        
+        return [
+            TextContent(type="text", text=text_output),
+            TextContent(
+                type="text",
+                text=f"JSON格式数据:\n```json\n{json.dumps(positions_data, ensure_ascii=False, indent=2)}\n```"
+            )
+        ]
+        
+    except Exception as e:
+        logger.error(f"获取持仓信息失败: {e}")
+        return [TextContent(
+            type="text",
+            text=f"获取持仓信息失败: {str(e)}"
+        )]
+
+
 async def main():
     """启动 MCP 服务器"""
     logger.info("启动富途 MCP 服务器...")
@@ -315,12 +797,15 @@ async def main():
         logger.info("服务器将继续运行，可稍后通过工具配置客户端")
     
     # 启动服务器
-    async with server.run_stdio() as streams:
+    from mcp.server.stdio import stdio_server
+    
+    async with stdio_server() as (read_stream, write_stream):
         await server.run(
-            streams[0], streams[1],
+            read_stream,
+            write_stream,
             initialization_options={
                 "server_name": "futu-mcp-server",
-                "server_version": "1.0.0",
+                "server_version": "1.1.0",
                 "capabilities": {
                     "tools": {}
                 }

@@ -1,7 +1,7 @@
 {
-  "name": "@futu/mcp-server",
-  "version": "1.0.0",
-  "description": "富途API MCP服务器 - 提供富途股票数据访问功能",
+  "name": "@shuchaang/futu-mcp-server",
+  "version": "1.1.0",
+  "description": "富途API MCP服务器 - 完整的股票数据和交易功能MCP工具集",
   "main": "bin/futu-mcp.js",
   "bin": {
     "futu-mcp": "./bin/futu-mcp.js"
@@ -10,7 +10,10 @@
     "start": "node bin/futu-mcp.js",
     "dev": "node bin/futu-mcp.js",
     "install-deps": "pip install -r requirements.txt",
-    "setup": "python3 -m venv venv && source venv/bin/activate && pip install git+https://github.com/modelcontextprotocol/python-sdk.git && pip install -r requirements.txt"
+    "setup": "python3 -m venv venv && source venv/bin/activate && pip install git+https://github.com/modelcontextprotocol/python-sdk.git && pip install -r requirements.txt",
+    "test": "python test_watchlist.py",
+    "prepublishOnly": "echo '准备发布...' && npm run test",
+    "postpublish": "echo '发布成功！现在可以使用: npx @shuchaang/futu-mcp-server'"
   },
   "keywords": [
     "mcp",
@@ -28,17 +31,22 @@
   "files": [
     "bin/",
     "futu_mcp_server.py",
+    "trademind/",
     "requirements.txt",
-    "README.md"
+    "README.md",
+    "FEATURES.md",
+    "CURSOR_SETUP_GUIDE.md",
+    "__init__.py",
+    "__main__.py"
   ],
   "dependencies": {},
   "devDependencies": {},
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-repo/futu-mcp.git"
+    "url": "https://github.com/shuchaang/futu-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/your-repo/futu-mcp/issues"
+    "url": "https://github.com/shuchaang/futu-mcp/issues"
   },
-  "homepage": "https://github.com/your-repo/futu-mcp#readme"
+  "homepage": "https://github.com/shuchaang/futu-mcp#readme"
 } 
