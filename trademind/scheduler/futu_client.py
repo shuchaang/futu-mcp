@@ -78,23 +78,25 @@ class FutuClient:
                 raise Exception("行情API未连接")
             
             # 获取自选股分组
-            ret, data = self.quote_ctx.get_user_security_group(ft.GroupType.ALL)
+            ret, data = self.quote_ctx.get_user_security_group(ft.UserSecurityGroupType.ALL)
             if ret != ft.RET_OK:
                 raise Exception(f"获取自选股分组失败: {data}")
             
             watchlist = {}
             
             # 遍历所有分组获取股票
-            for group in data.itertuples():
-                group_name = group.group_name
-                
-                # 获取分组内的股票
-                ret, stocks = self.quote_ctx.get_user_security(group_name)
-                if ret == ft.RET_OK:
-                    for stock in stocks.itertuples():
-                        code = stock.code
-                        name = getattr(stock, 'name', code)
-                        watchlist[code] = name
+            if not data.empty:
+                for _, group in data.iterrows():
+                    group_name = group.get('group_name', '')
+                    
+                    # 获取分组内的股票
+                    ret, stocks = self.quote_ctx.get_user_security(group_name)
+                    if ret == ft.RET_OK and not stocks.empty:
+                        for _, stock in stocks.iterrows():
+                            code = stock.get('code', '')
+                            name = stock.get('name', code)
+                            if code:  # 确保代码不为空
+                                watchlist[code] = name
             
             return watchlist
             
