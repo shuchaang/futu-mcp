@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -9,16 +9,68 @@ const projectRoot = path.dirname(__dirname);
 
 // 检查虚拟环境是否存在
 const venvPath = path.join(projectRoot, 'venv');
-const pythonPath = path.join(venvPath, 'bin', 'python');
+const pythonPath = process.platform === 'win32' 
+    ? path.join(venvPath, 'Scripts', 'python.exe')
+    : path.join(venvPath, 'bin', 'python');
 
+// 自动设置虚拟环境函数
+function setupVirtualEnv() {
+    console.log('⚙️ 首次运行，正在设置Python虚拟环境...');
+    
+    try {
+        // 检查python3是否可用
+        try {
+            execSync('python3 --version', { stdio: 'pipe' });
+        } catch (error) {
+            console.error('❌ python3 未找到，请先安装Python 3');
+            process.exit(1);
+        }
+        
+        // 创建虚拟环境
+        console.log('📦 创建虚拟环境...');
+        execSync(`python3 -m venv "${venvPath}"`, { 
+            cwd: projectRoot, 
+            stdio: 'inherit' 
+        });
+        
+        // 安装MCP SDK
+        console.log('📦 安装MCP SDK...');
+        const pipPath = process.platform === 'win32' 
+            ? path.join(venvPath, 'Scripts', 'pip')
+            : path.join(venvPath, 'bin', 'pip');
+            
+        execSync(`"${pipPath}" install git+https://github.com/modelcontextprotocol/python-sdk.git`, {
+            cwd: projectRoot,
+            stdio: 'inherit'
+        });
+        
+        // 安装requirements.txt中的依赖
+        const requirementsPath = path.join(projectRoot, 'requirements.txt');
+        if (fs.existsSync(requirementsPath)) {
+            console.log('📦 安装项目依赖...');
+            execSync(`"${pipPath}" install -r requirements.txt`, {
+                cwd: projectRoot,
+                stdio: 'inherit'
+            });
+        }
+        
+        console.log('✅ 虚拟环境设置完成！');
+        
+    } catch (error) {
+        console.error('❌ 虚拟环境设置失败:', error.message);
+        console.error('\n💡 请手动运行以下命令：');
+        console.error(`cd ${projectRoot}`);
+        console.error('python3 -m venv venv');
+        console.error('source venv/bin/activate');
+        console.error('pip install git+https://github.com/modelcontextprotocol/python-sdk.git');
+        console.error('pip install -r requirements.txt');
+        process.exit(1);
+    }
+}
+
+// 检查并设置虚拟环境
 if (!fs.existsSync(pythonPath)) {
-    console.error('❌ 虚拟环境不存在，请先运行以下命令设置环境：');
-    console.error('cd', projectRoot);
-    console.error('python3 -m venv venv');
-    console.error('source venv/bin/activate');
-    console.error('pip install git+https://github.com/modelcontextprotocol/python-sdk.git');
-    console.error('pip install -r requirements.txt');
-    process.exit(1);
+    setupVirtualEnv();
 }
 
 // 检查MCP服务器文件是否存在
