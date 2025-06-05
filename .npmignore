@@ -1,0 +1,94 @@
+# 开发环境文件
+venv/
+.venv/
+env/
+.env
+
+# Python缓存和编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 测试文件
+test_mcp.py
+test_output/
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 开发工具配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.log
+
+# Git相关
+.git/
+.gitignore
+
+# 配置文件示例（保留模板，排除个人配置）
+cursor_mcp_config_examples.json
+cursor_mcp_config_flexible.json
+cursor_mcp_config.json
+futu_mcp_config.json
+
+# 个人配置文件
+cursor_mcp_config_personal.json
+my_futu_config.json
+local_config.json
+personal_settings.json
+
+# 文档和指南（可选择性包含）
+FUTU_MCP_README.md
+publish_guide.md
+python_npx_examples.md
+
+# 启动脚本（保留shell脚本作为备选）
+start_mcp_server.sh
+start_futu_mcp.py
+
+# 临时文件
+temp/
+tmp/
+*.tmp
+*.bak
+*.backup
+*.old
+
+# 压缩文件
+*.zip
+*.tar.gz
+*.rar
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 敏感文件
+*.key
+*.pem
+*.p12
+.env*
+
+# Node.js开发文件
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+.npm/
+
+# 构建输出（如果有）
+dist/
+build/
+out/
+
+# 缓存
+.cache/
+cache/ 

@@ -1,0 +1,95 @@
+{
+  "description": "富途 MCP 服务器配置示例",
+  "examples": {
+    "local_default": {
+      "description": "本地默认配置 - 富途客户端运行在本机",
+      "config": {
+        "mcpServers": {
+          "futu-mcp": {
+            "command": "npx",
+            "args": [
+              "--yes",
+              "/Users/admin/Documents/futu/futu_mcp"
+            ],
+            "env": {
+              "FUTU_API_HOST": "127.0.0.1",
+              "FUTU_API_PORT": "11111"
+            }
+          }
+        }
+      }
+    },
+    "remote_server": {
+      "description": "远程服务器配置 - 富途客户端运行在远程服务器",
+      "config": {
+        "mcpServers": {
+          "futu-mcp": {
+            "command": "npx",
+            "args": [
+              "--yes",
+              "/Users/admin/Documents/futu/futu_mcp"
+            ],
+            "env": {
+              "FUTU_API_HOST": "192.168.1.100",
+              "FUTU_API_PORT": "11111"
+            }
+          }
+        }
+      }
+    },
+    "with_password": {
+      "description": "带解锁密码的配置",
+      "config": {
+        "mcpServers": {
+          "futu-mcp": {
+            "command": "npx",
+            "args": [
+              "--yes",
+              "/Users/admin/Documents/futu/futu_mcp"
+            ],
+            "env": {
+              "FUTU_API_HOST": "127.0.0.1",
+              "FUTU_API_PORT": "11111",
+              "FUTU_UNLOCK_PASSWORD": "your_unlock_password"
+            }
+          }
+        }
+      }
+    },
+    "custom_port": {
+      "description": "自定义端口配置",
+      "config": {
+        "mcpServers": {
+          "futu-mcp": {
+            "command": "npx",
+            "args": [
+              "--yes",
+              "/Users/admin/Documents/futu/futu_mcp"
+            ],
+            "env": {
+              "FUTU_API_HOST": "127.0.0.1",
+              "FUTU_API_PORT": "22222"
+            }
+          }
+        }
+      }
+    }
+  },
+  "environment_variables": {
+    "FUTU_API_HOST": {
+      "description": "富途API主机地址",
+      "default": "127.0.0.1",
+      "examples": ["127.0.0.1", "192.168.1.100", "10.0.0.50"]
+    },
+    "FUTU_API_PORT": {
+      "description": "富途API端口",
+      "default": "11111",
+      "examples": ["11111", "22222", "33333"]
+    },
+    "FUTU_UNLOCK_PASSWORD": {
+      "description": "富途客户端解锁密码（可选）",
+      "default": null,
+      "note": "如果富途客户端设置了解锁密码，需要提供此环境变量"
+    }
+  }
+} 

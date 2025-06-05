@@ -1,0 +1,44 @@
+{
+  "name": "@futu/mcp-server",
+  "version": "1.0.0",
+  "description": "富途API MCP服务器 - 提供富途股票数据访问功能",
+  "main": "bin/futu-mcp.js",
+  "bin": {
+    "futu-mcp": "./bin/futu-mcp.js"
+  },
+  "scripts": {
+    "start": "node bin/futu-mcp.js",
+    "dev": "node bin/futu-mcp.js",
+    "install-deps": "pip install -r requirements.txt",
+    "setup": "python3 -m venv venv && source venv/bin/activate && pip install git+https://github.com/modelcontextprotocol/python-sdk.git && pip install -r requirements.txt"
+  },
+  "keywords": [
+    "mcp",
+    "futu",
+    "stock",
+    "trading",
+    "api",
+    "model-context-protocol"
+  ],
+  "author": "TradeMind Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "bin/",
+    "futu_mcp_server.py",
+    "requirements.txt",
+    "README.md"
+  ],
+  "dependencies": {},
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-repo/futu-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-repo/futu-mcp/issues"
+  },
+  "homepage": "https://github.com/your-repo/futu-mcp#readme"
+} 

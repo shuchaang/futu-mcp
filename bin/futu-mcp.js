@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+
+// 获取项目根目录
+const projectRoot = path.dirname(__dirname);
+
+// 检查虚拟环境是否存在
+const venvPath = path.join(projectRoot, 'venv');
+const pythonPath = path.join(venvPath, 'bin', 'python');
+
+if (!fs.existsSync(pythonPath)) {
+    console.error('❌ 虚拟环境不存在，请先运行以下命令设置环境：');
+    console.error('cd', projectRoot);
+    console.error('python3 -m venv venv');
+    console.error('source venv/bin/activate');
+    console.error('pip install git+https://github.com/modelcontextprotocol/python-sdk.git');
+    console.error('pip install -r requirements.txt');
+    process.exit(1);
+}
+
+// 检查MCP服务器文件是否存在
+const serverPath = path.join(projectRoot, 'futu_mcp_server.py');
+if (!fs.existsSync(serverPath)) {
+    console.error('❌ MCP服务器文件不存在:', serverPath);
+    process.exit(1);
+}
+
+// 设置环境变量
+const env = {
+    ...process.env,
+    PYTHONPATH: projectRoot,
+    // 从环境变量获取富途API配置，如果没有则使用默认值
+    FUTU_API_HOST: process.env.FUTU_API_HOST || '127.0.0.1',
+    FUTU_API_PORT: process.env.FUTU_API_PORT || '11111'
+};
+
+// 如果设置了解锁密码
+if (process.env.FUTU_UNLOCK_PASSWORD) {
+    env.FUTU_UNLOCK_PASSWORD = process.env.FUTU_UNLOCK_PASSWORD;
+}
+
+console.log('🚀 启动富途 MCP 服务器...');
+console.log(`📡 富途API地址: ${env.FUTU_API_HOST}:${env.FUTU_API_PORT}`);
+
+// 启动Python MCP服务器
+const child = spawn(pythonPath, [serverPath], {
+    env: env,
+    cwd: projectRoot,
+    stdio: 'inherit'
+});
+
+// 处理进程退出
+child.on('close', (code) => {
+    if (code !== 0) {
+        console.error(`❌ MCP服务器退出，退出码: ${code}`);
+        process.exit(code);
+    }
+});
+
+// 处理错误
+child.on('error', (err) => {
+    console.error('❌ 启动MCP服务器失败:', err.message);
+    process.exit(1);
+});
+
+// 处理进程信号
+process.on('SIGINT', () => {
+    console.log('\n🛑 正在停止MCP服务器...');
+    child.kill('SIGINT');
+});
+
+process.on('SIGTERM', () => {
+    console.log('\n🛑 正在停止MCP服务器...');
+    child.kill('SIGTERM');
+}); 
