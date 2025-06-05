@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "--yes",
-        "/Users/admin/Documents/futu/futu_mcp"
+        "@shuchang/futu-mcp-server@latest"
       ],
       "env": {
         "FUTU_API_HOST": "127.0.0.1",
