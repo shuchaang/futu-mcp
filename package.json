@@ -3,7 +3,9 @@
   "version": "1.1.5",
   "description": "富途API MCP服务器 - 完整的股票数据和交易功能MCP工具集",
   "main": "bin/futu-mcp.js",
-  "bin": "./bin/futu-mcp.js",
+  "bin": {
+    "futu-mcp-server": "./bin/futu-mcp.js"
+  },
   "scripts": {
     "start": "node bin/futu-mcp.js",
     "dev": "node bin/futu-mcp.js",
