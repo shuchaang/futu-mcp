@@ -5,7 +5,7 @@
 pydantic>=2.0.0
 
 # 富途API (用于实际连接)
-futu-api>=6.0.0
+futu-api>=7.1.3308
 
 # Web框架相关 (MCP依赖)
 anyio>=4.5
@@ -15,4 +15,63 @@ pydantic-settings>=2.5.2
 python-multipart>=0.0.9
 sse-starlette>=1.6.1
 starlette>=0.27
-uvicorn>=0.23.1 
+uvicorn>=0.23.1
+
+# 富途MCP服务器依赖包
+
+# MCP核心依赖 - 使用最新版本
+mcp>=1.9.3
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# 富途API依赖
+futu-api>=6.15.2
+
+# 数据处理
+pandas>=2.0.0
+numpy>=1.24.0
+
+# 异步支持
+asyncio-timeout>=4.0.0
+aiofiles>=23.0.0
+
+# 日志和配置
+structlog>=23.0.0
+python-dotenv>=1.0.0
+
+# 类型检查（开发时使用）
+mypy>=1.0.0
+types-requests>=2.31.0
+
+# 测试依赖
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.10.0
+
+# 开发工具
+black>=23.0.0
+isort>=5.12.0
+flake8>=6.0.0
+
+# HTTP客户端（可选，用于HTTP传输）
+httpx>=0.24.0
+uvicorn>=0.23.0
+
+# Async Support
+aiohttp>=3.8.0
+asyncio>=3.4.3
+
+# Logging & Configuration
+python-json-logger>=2.0.0
+pyyaml>=6.0.0
+
+# Testing
+pytest-cov>=4.1.0
+
+# Documentation
+sphinx>=7.0.0
+sphinx-rtd-theme>=1.0.0
+
+# Optional Dependencies
+websockets>=11.0.0  # For WebSocket support if needed
+requests>=2.31.0    # For HTTP requests if needed 
