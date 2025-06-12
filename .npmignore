@@ -4,28 +4,8 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
 venv/
 ENV/
-env/
-.venv/
 
 # IDE
 .vscode/
@@ -33,18 +13,43 @@ env/
 *.swp
 *.swo
 
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test
+test/
+tests/
+*.test.js
+*.spec.js
+
+# Development
+.editorconfig
+.eslintrc
+.prettierrc
+*.md
+!README.md
+!FEATURES.md
+!CURSOR_SETUP_GUIDE.md
+
+# Virtual environments
+env/
+.venv/
+
 # OS
 .DS_Store
 Thumbs.db
 
 # Logs
-*.log
 logs/
 
 # Test files
 test_*.py
 *_test.py
-tests/
 
 # Development files
 .env
@@ -53,13 +58,8 @@ tests/
 .env.test
 .env.production
 
-# Git
-.git/
-.gitignore
-
 # npm
 node_modules/
-npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
@@ -115,7 +115,6 @@ tmp/
 
 # Node.js开发文件
 node_modules/
-npm-debug.log*
 yarn-debug.log*
 .npm/
 
