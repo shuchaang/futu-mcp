@@ -12,6 +12,9 @@ const venvPath = path.join(projectRoot, 'venv');
 const pythonPath = process.platform === 'win32' 
     ? path.join(venvPath, 'Scripts', 'python.exe')
     : path.join(venvPath, 'bin', 'python');
+const pipPath = process.platform === 'win32'
+    ? path.join(venvPath, 'Scripts', 'pip')
+    : path.join(venvPath, 'bin', 'pip');
 
 // 自动设置虚拟环境函数
 function setupVirtualEnv() {
@@ -28,27 +31,18 @@ function setupVirtualEnv() {
         
         // 创建虚拟环境
         console.log('📦 创建虚拟环境...');
-        execSync(`python3 -m venv "${venvPath}"`, { 
-            cwd: projectRoot, 
-            stdio: 'inherit' 
-        });
+        if (!fs.existsSync(venvPath)) {
+            execSync(`python3 -m venv "${venvPath}"`, { 
+                cwd: projectRoot, 
+                stdio: 'inherit' 
+            });
+        }
         
-        // 安装MCP SDK
-        console.log('📦 安装MCP SDK...');
-        const pipPath = process.platform === 'win32' 
-            ? path.join(venvPath, 'Scripts', 'pip')
-            : path.join(venvPath, 'bin', 'pip');
-            
-        execSync(`"${pipPath}" install git+https://github.com/modelcontextprotocol/python-sdk.git`, {
-            cwd: projectRoot,
-            stdio: 'inherit'
-        });
-        
-        // 安装requirements.txt中的依赖
+        // 安装依赖
+        console.log('📦 安装项目依赖...');
         const requirementsPath = path.join(projectRoot, 'requirements.txt');
         if (fs.existsSync(requirementsPath)) {
-            console.log('📦 安装项目依赖...');
-            execSync(`"${pipPath}" install -r requirements.txt`, {
+            execSync(`"${pipPath}" install -r "${requirementsPath}"`, {
                 cwd: projectRoot,
                 stdio: 'inherit'
             });
@@ -62,7 +56,6 @@ function setupVirtualEnv() {
         console.error(`cd ${projectRoot}`);
         console.error('python3 -m venv venv');
         console.error('source venv/bin/activate');
-        console.error('pip install git+https://github.com/modelcontextprotocol/python-sdk.git');
         console.error('pip install -r requirements.txt');
         process.exit(1);
     }
@@ -71,6 +64,14 @@ function setupVirtualEnv() {
 // 检查并设置虚拟环境
 if (!fs.existsSync(pythonPath)) {
     setupVirtualEnv();
+} else {
+    // 确保依赖已安装
+    try {
+        execSync(`"${pipPath}" freeze`, { stdio: 'pipe' });
+    } catch (error) {
+        console.log('📦 检测到虚拟环境可能需要更新，正在重新安装依赖...');
+        setupVirtualEnv();
+    }
 }
 
 // 检查MCP服务器文件是否存在
@@ -86,7 +87,10 @@ const env = {
     PYTHONPATH: projectRoot,
     // 从环境变量获取富途API配置，如果没有则使用默认值
     FUTU_API_HOST: process.env.FUTU_API_HOST || '127.0.0.1',
-    FUTU_API_PORT: process.env.FUTU_API_PORT || '11111'
+    FUTU_API_PORT: process.env.FUTU_API_PORT || '11111',
+    // 确保 Python 使用虚拟环境中的包
+    VIRTUAL_ENV: venvPath,
+    PATH: `${path.dirname(pythonPath)}${path.delimiter}${process.env.PATH}`
 };
 
 // 如果设置了解锁密码
