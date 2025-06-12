@@ -296,86 +296,73 @@ class FutuClient:
         # 如果已经是字符串，直接返回
         return str(group_type) if group_type else 'UNKNOWN'
 
-    def get_positions(self, account_type: str = "REAL") -> List[Dict[str, Any]]:
-        """
-        获取持仓信息
-        
-        Args:
-            account_type: 账户类型 (REAL, SIMULATE)
-            
-        Returns:
-            List[Dict[str, Any]]: 持仓信息列表
-        """
+    def get_positions(self, account_type: str = "REAL") -> str:
+        """获取持仓信息"""
         try:
             if not self.trade_ctx:
-                raise Exception("交易API未连接或未解锁")
+                return "❌ 交易API未连接，请先解锁交易"
             
             # 转换账户类型
-            trd_env = ft.TrdEnv.REAL if account_type == "REAL" else ft.TrdEnv.SIMULATE
+            env_map = {
+                "REAL": ft.TrdEnv.REAL,
+                "SIMULATE": ft.TrdEnv.SIMULATE
+            }
             
-            # 遍历所有市场的交易上下文获取持仓
-            all_positions = []
-            for market, ctx in self.trade_ctx.items():
-                try:
-                    # 获取账户列表
-                    ret, data = ctx.get_acc_list()
-                    if ret != ft.RET_OK:
-                        logger.warning(f"{market}市场获取账户列表失败: {data}")
-                        continue
-                    
-                    # 查找指定类型的账户
-                    target_acc = None
-                    for _, acc in data.iterrows():
-                        if acc.get('trd_env') == trd_env:
-                            target_acc = acc
-                            break
-                    
-                    if target_acc is None:
-                        logger.warning(f"{market}市场未找到{account_type}类型账户")
-                        continue
-                    
-                    acc_id = target_acc['acc_id']
-                    
-                    # 获取持仓
-                    ret, data = ctx.position_list_query(
-                        trd_env=trd_env,
-                        acc_id=acc_id,
-                        refresh_cache=True  # 刷新缓存以获取最新数据
-                    )
-                    if ret != ft.RET_OK:
-                        logger.warning(f"{market}市场获取持仓失败: {data}")
-                        continue
-                    
-                    if not data.empty:
-                        for _, pos in data.iterrows():
-                            position_info = {
-                                "股票代码": pos.get('code', ''),
-                                "股票名称": pos.get('stock_name', ''),
-                                "持仓数量": pos.get('qty', 0),
-                                "可卖数量": pos.get('can_sell_qty', 0),
-                                "成本价": pos.get('cost_price', 0),
-                                "当前价": pos.get('nominal_price', 0),
-                                "市值": pos.get('market_val', 0),
-                                "盈亏": pos.get('pl_val', 0),
-                                "盈亏比例": f"{pos.get('pl_ratio', 0):.2f}%",
-                                "持仓方向": "多头" if pos.get('position_side') == ft.PositionSide.LONG else "空头",
-                                "市场": market,  # 使用当前遍历的市场
-                                "交易货币": pos.get('currency', ''),
-                                "摊薄成本价": pos.get('diluted_cost_price', 0),
-                                "平均成本价": pos.get('avg_cost_price', 0),
-                            }
-                            all_positions.append(position_info)
-                            
-                except Exception as e:
-                    logger.warning(f"{market}市场获取持仓时发生错误: {e}")
-                    continue
+            # 获取持仓数据
+            ret, data = self.trade_ctx['HK'].position_list_query(
+                trd_env=env_map.get(account_type, ft.TrdEnv.REAL)
+            )
             
-            return all_positions
+            if ret != ft.RET_OK:
+                return f"❌ 获取持仓数据失败: {data}"
+            
+            if data.empty:
+                return f"📊 {account_type} 账户暂无持仓"
+            
+            # 格式化输出
+            text_output = f"📊 {account_type} 持仓信息\n"
+            text_output += "=" * 50 + "\n\n"
+            
+            # 计算总资产和总盈亏
+            total_pl = 0
+            total_value = 0
+            
+            # 遍历每个持仓
+            for _, position in data.iterrows():
+                code = position.get('code', '')
+                name = position.get('stock_name', '')
+                qty = position.get('qty', 0)
+                cost_price = position.get('cost_price', 0)
+                current_price = position.get('current_price', 0)
+                market_val = position.get('market_val', 0)
+                pl_val = position.get('pl_val', 0)
+                pl_ratio = position.get('pl_ratio', 0) * 100  # 转换为百分比
+                
+                # 累计总盈亏和总市值
+                total_pl += pl_val
+                total_value += market_val
+                
+                # 选择emoji
+                emoji = "📈" if pl_val > 0 else "📉" if pl_val < 0 else "➡️"
+                
+                # 添加持仓信息
+                text_output += f"{emoji} {code} - {name}\n"
+                text_output += f"   持仓: {qty:,.0f} 股\n"
+                text_output += f"   成本价: {cost_price:.3f} | 现价: {current_price:.3f}\n"
+                text_output += f"   市值: {market_val:,.2f}\n"
+                text_output += f"   盈亏: {pl_val:+,.2f} ({pl_ratio:+.2f}%)\n\n"
+            
+            # 添加总计信息
+            text_output += "📈 总计\n"
+            text_output += f"   总市值: {total_value:,.2f}\n"
+            text_output += f"   总盈亏: {total_pl:+,.2f}\n"
+            
+            return text_output
             
         except Exception as e:
             self.last_error = str(e)
-            logger.error(f"获取持仓信息失败: {e}")
-            return []
+            logger.error(f"获取持仓数据失败: {e}")
+            return f"❌ 获取持仓数据失败: {str(e)}"
     
 
     def close(self):
@@ -508,4 +495,235 @@ class FutuClient:
         except Exception as e:
             self.last_error = str(e)
             logger.error(f"获取快照数据失败: {e}")
-            return {} 
+            return {"error": str(e)}
+
+    def get_history_kline(self, code: str, start: str = None, end: str = None, 
+                         ktype: str = 'K_DAY', autype: str = 'QFQ') -> Dict[str, Any]:
+        """
+        获取历史K线数据
+        
+        Args:
+            code: 股票代码，如 US.AAPL, HK.00700
+            start: 开始时间，格式：yyyy-MM-dd，如：2023-01-01
+            end: 结束时间，格式：yyyy-MM-dd，如：2023-12-31
+            ktype: K线类型，支持：K_1M, K_5M, K_15M, K_30M, K_60M, K_DAY, K_WEEK, K_MONTH
+            autype: 复权类型，支持：None(不复权), QFQ(前复权), HFQ(后复权)
+            
+        Returns:
+            Dict[str, Any]: K线数据字典
+        """
+        try:
+            if not self.quote_ctx:
+                raise Exception("行情API未连接")
+            
+            # 转换K线类型
+            ktype_map = {
+                'K_1M': ft.KLType.K_1M,
+                'K_5M': ft.KLType.K_5M,
+                'K_15M': ft.KLType.K_15M,
+                'K_30M': ft.KLType.K_30M,
+                'K_60M': ft.KLType.K_60M,
+                'K_DAY': ft.KLType.K_DAY,
+                'K_WEEK': ft.KLType.K_WEEK,
+                'K_MONTH': ft.KLType.K_MON
+            }
+            
+            # 转换复权类型
+            autype_map = {
+                'None': ft.AuType.NONE,
+                'QFQ': ft.AuType.QFQ,
+                'HFQ': ft.AuType.HFQ
+            }
+            
+            # 获取K线数据
+            ret, data, page_req_key = self.quote_ctx.request_history_kline(
+                code=code,
+                start=start,
+                end=end,
+                ktype=ktype_map.get(ktype, ft.KLType.K_DAY),
+                autype=autype_map.get(autype, ft.AuType.QFQ),
+                max_count=1000,  # 单次最多返回1000根K线
+                extended_time=True  # 允许美股盘前盘后数据
+            )
+            
+            if ret != ft.RET_OK:
+                # 解析股票代码的市场
+                market = code.split('.')[0] if '.' in code else ''
+                error_msg = []
+                
+                # 添加错误信息
+                error_msg.append(f"获取K线失败: {data}")
+                error_msg.append(f"市场: {market}")
+                
+                # 添加市场特定提示
+                if market == 'US':
+                    error_msg.append("请检查美股行情权限和交易时段（美东时间9:30-16:00）")
+                    error_msg.append("如需美股LV2行情，请订阅：https://qtcard.futunn.com/intro/uslv2")
+                elif market == 'HK':
+                    error_msg.append("请检查港股行情权限和交易时段（香港时间9:30-16:00）")
+                elif market in ['SH', 'SZ']:
+                    error_msg.append("请检查A股行情权限和交易时段（北京时间9:30-15:00）")
+                    
+                return {"error": "\n".join(error_msg)}
+
+            if data.empty:
+                return {"error": "未获取到K线数据"}
+
+            # 格式化K线数据
+            klines = []
+            for _, kline in data.iterrows():
+                kline_info = {
+                    "时间": kline.get('time_key', ''),
+                    "开盘": kline.get('open', 0),
+                    "收盘": kline.get('close', 0),
+                    "最高": kline.get('high', 0),
+                    "最低": kline.get('low', 0),
+                    "成交量": kline.get('volume', 0),
+                    "成交额": kline.get('turnover', 0),
+                }
+                
+                # 添加额外指标（如果有）
+                if 'turnover_rate' in data.columns:
+                    kline_info["换手率"] = kline.get('turnover_rate', 0)
+                if 'pe_ratio' in data.columns:
+                    kline_info["市盈率"] = kline.get('pe_ratio', 0)
+                if 'pb_ratio' in data.columns:
+                    kline_info["市净率"] = kline.get('pb_ratio', 0)
+                
+                klines.append(kline_info)
+            
+            # 计算统计数据
+            if klines:
+                first_kline = klines[0]
+                last_kline = klines[-1]
+                total_change = (last_kline['收盘'] - first_kline['开盘']) / first_kline['开盘'] * 100
+                
+                stats = {
+                    "K线数量": len(klines),
+                    "起始日期": first_kline['时间'],
+                    "结束日期": last_kline['时间'],
+                    "总涨跌幅": total_change,
+                    "最高价": max(k['最高'] for k in klines),
+                    "最低价": min(k['最低'] for k in klines),
+                    "总成交量": sum(k['成交量'] for k in klines),
+                    "平均成交量": sum(k['成交量'] for k in klines) / len(klines),
+                }
+                
+                # 如果有换手率数据，计算平均换手率
+                if all('换手率' in k for k in klines):
+                    stats["平均换手率"] = sum(k['换手率'] for k in klines) / len(klines)
+                
+                return {
+                    "股票代码": code,
+                    "K线类型": ktype,
+                    "复权类型": autype,
+                    "统计数据": stats,
+                    "K线数据": klines
+                }
+            else:
+                return {"error": "未获取到K线数据"}
+            
+        except Exception as e:
+            self.last_error = str(e)
+            logger.error(f"获取历史K线失败: {e}")
+            return {"error": str(e)}
+
+    def get_funds(self, trd_env: str = "REAL", acc_id: int = 0, refresh_cache: bool = False) -> Dict[str, Any]:
+        """
+        查询账户资金
+        
+        Args:
+            trd_env: 交易环境，REAL（真实）或 SIMULATE（模拟）
+            acc_id: 交易业务账户ID，默认0表示使用第一个账户
+            refresh_cache: 是否刷新缓存，默认False
+            
+        Returns:
+            Dict[str, Any]: 账户资金信息
+        """
+        try:
+            if not self.trade_ctx:
+                return {"error": "交易API未连接，请先解锁交易"}
+            
+            # 转换交易环境
+            env_map = {
+                "REAL": ft.TrdEnv.REAL,
+                "SIMULATE": ft.TrdEnv.SIMULATE
+            }
+            
+            # 获取资金数据
+            ret, data = self.trade_ctx['HK'].accinfo_query(
+                trd_env=env_map.get(trd_env, ft.TrdEnv.REAL),
+                acc_id=acc_id,
+                refresh_cache=refresh_cache
+            )
+            
+            if ret != ft.RET_OK:
+                return {"error": f"获取资金数据失败: {data}"}
+            
+            if data.empty:
+                return {"error": "未获取到资金数据"}
+            
+            # 格式化资金数据
+            funds = data.iloc[0]
+            result = {
+                "总资产": {
+                    "总资产净值": float(funds.get('total_assets', 0)),
+                    "证券资产": float(funds.get('securities_assets', 0)),
+                    "基金资产": float(funds.get('funds_assets', 0)),
+                    "债券资产": float(funds.get('bonds_assets', 0)),
+                },
+                "现金信息": {},
+                "交易能力": {
+                    "最大购买力": float(funds.get('power', 0)),
+                    "卖空购买力": float(funds.get('max_power_short', 0)),
+                },
+                "风险信息": {
+                    "初始保证金": float(funds.get('initial_margin', 0)),
+                    "维持保证金": float(funds.get('maintenance_margin', 0)),
+                    "保证金追缴金额": float(funds.get('margin_call_margin', 0)),
+                    "风险状态": self._convert_risk_status(funds.get('risk_status', 0))
+                }
+            }
+            
+            # 添加各币种现金信息
+            cash_info_list = funds.get('cash_info_list', [])
+            if not isinstance(cash_info_list, list):
+                cash_info_list = []
+                
+            currency_map = {
+                1: "港币",  # HKD
+                2: "美元",  # USD
+                3: "离岸人民币",  # CNH
+                4: "在岸人民币",  # CNY
+                5: "日元",   # JPY
+                6: "新加坡元"  # SGD
+            }
+            
+            for cash_info in cash_info_list:
+                currency = currency_map.get(cash_info.get('currency', 0), '未知货币')
+                result["现金信息"][currency] = {
+                    "现金": float(cash_info.get('cash', 0)),
+                    "可用资金": float(cash_info.get('available_balance', 0)),
+                    "购买力": float(cash_info.get('net_cash_power', 0))
+                }
+            
+            return result
+            
+        except Exception as e:
+            self.last_error = str(e)
+            logger.error(f"获取资金数据失败: {e}")
+            return {"error": str(e)}
+            
+    def _convert_risk_status(self, status: int) -> str:
+        """转换风险状态为可读字符串"""
+        status_map = {
+            1: "正常",
+            2: "关注",
+            3: "警告",
+            4: "追保",
+            5: "强平",
+            6: "禁买",
+            7: "禁卖",
+            8: "禁买卖"
+        }
+        return status_map.get(status, "未知状态") 

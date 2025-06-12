@@ -11,6 +11,7 @@ import sys
 import os
 from pathlib import Path
 import pandas as pd
+from typing import Dict, Any
 
 # 添加项目路径
 project_root = Path(__file__).parent
@@ -141,7 +142,116 @@ async def list_tools():
                 "additionalProperties": False
             }
         ),
+
+        Tool(
+            name="get_history_kline",
+            description="获取历史K线数据，支持分钟、日、周、月K线",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "股票代码，如 US.AAPL, HK.00700"
+                    },
+                    "start": {
+                        "type": "string",
+                        "description": "开始时间，格式：yyyy-MM-dd，如：2023-01-01",
+                        "default": None
+                    },
+                    "end": {
+                        "type": "string",
+                        "description": "结束时间，格式：yyyy-MM-dd，如：2023-12-31",
+                        "default": None
+                    },
+                    "ktype": {
+                        "type": "string",
+                        "description": "K线类型",
+                        "enum": ["K_1M", "K_5M", "K_15M", "K_30M", "K_60M", "K_DAY", "K_WEEK", "K_MONTH"],
+                        "default": "K_DAY"
+                    },
+                    "autype": {
+                        "type": "string",
+                        "description": "复权类型",
+                        "enum": ["None", "QFQ", "HFQ"],
+                        "default": "QFQ"
+                    }
+                },
+                "required": ["code"],
+                "additionalProperties": False
+            }
+        ),
+        
+        Tool(
+            name="get_funds",
+            description="获取账户资金信息，包括总资产、现金、证券资产等详细信息",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "trd_env": {
+                        "type": "string",
+                        "description": "交易环境，REAL（真实）或 SIMULATE（模拟）",
+                        "enum": ["REAL", "SIMULATE"],
+                        "default": "REAL"
+                    },
+                    "acc_id": {
+                        "type": "integer",
+                        "description": "交易业务账户ID，默认0表示使用第一个账户",
+                        "default": 0
+                    },
+                    "refresh_cache": {
+                        "type": "boolean",
+                        "description": "是否刷新缓存",
+                        "default": False
+                    }
+                },
+                "additionalProperties": False
+            }
+        ),
     ]
+
+def get_history_kline(code: str, start: str = None, end: str = None, ktype: str = 'K_DAY', autype: str = 'QFQ') -> str:
+    """获取历史K线数据"""
+    try:
+        # 调用富途客户端获取K线数据
+        kline_data = futu_client.get_history_kline(code, start, end, ktype, autype)
+        
+        if isinstance(kline_data, dict) and "error" in kline_data:
+            return f"❌ {kline_data['error']}"
+
+        # 格式化输出
+        result = f"📊 {code} 历史K线数据\n" + "=" * 60 + "\n\n"
+        
+        # 基本信息
+        result += f"⏰ 周期：{ktype}\n"
+        result += f"📅 时间范围：{start or '365天前'} 至 {end or '今日'}\n"
+        result += f"🔄 复权方式：{autype}\n\n"
+        
+        # 统计数据
+        stats = kline_data.get('统计数据', {})
+        result += f"共 {stats.get('K线数量', 0)} 根K线\n"
+        
+        # 区间表现
+        total_change = stats.get('总涨跌幅', '0%')
+        if isinstance(total_change, str):
+            total_change = float(total_change.rstrip('%'))
+        direction = "📈" if total_change >= 0 else "📉"
+        result += f"\n{direction} 区间表现：\n"
+        result += f"   涨跌幅：{total_change:+.2f}%\n"
+        result += f"   最高价：{stats.get('最高价', 0):.3f}\n"
+        result += f"   最低价：{stats.get('最低价', 0):.3f}\n"
+        
+        # 成交统计
+        result += f"\n📊 成交统计：\n"
+        result += f"   总成交量：{stats.get('总成交量', 0):,.0f}\n"
+        result += f"   平均成交量：{stats.get('平均成交量', 0):,.0f}\n"
+        
+        if "平均换手率" in stats:
+            result += f"   平均换手率：{stats.get('平均换手率', 0):.2f}%\n"
+
+        return result
+
+    except Exception as e:
+        return f"❌ 获取历史K线失败: {str(e)}"
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict):
@@ -165,265 +275,140 @@ async def call_tool(name: str, arguments: dict):
             if not user_securities:
                 return [TextContent(
                     type="text",
-                    text=f"❌ 未能获取自选股分组 '{group_name}' 的数据\n\n可能原因:\n1. 分组名称不存在\n2. 分组为空\n3. 网络连接问题"
+                    text=f"❌ 获取自选股列表失败"
                 )]
-            
-            # 格式化输出
-            text_output = f"⭐ 自选股列表 - {group_name}\n"
-            text_output += "=" * 60 + "\n\n"
-            text_output += f"📊 共 {len(user_securities)} 只股票\n\n"
-            
-            # 按市场分组显示
-            markets = {}
-            for stock in user_securities:
-                market = stock.get('市场', 'Unknown')
-                if market not in markets:
-                    markets[market] = []
-                markets[market].append(stock)
-            
-            market_names = {
-                'US': '🇺🇸 美股',
-                'HK': '🇭🇰 港股', 
-                'SH': '🇨🇳 沪股',
-                'SZ': '🇨🇳 深股',
-                'Unknown': '❓ 其他'
-            }
-            
-            for market, stocks in markets.items():
-                if not stocks:
-                    continue
-                    
-                market_display = market_names.get(market, f'📊 {market}')
-                text_output += f"{market_display} ({len(stocks)}只)\n"
-                text_output += "-" * 40 + "\n"
                 
-                for i, stock in enumerate(stocks, 1):
-                    code = stock.get('股票代码', '')
-                    name = stock.get('股票名称', '')
-                    stock_type = stock.get('股票类型', '')
-                    
-                    # 根据股票类型选择emoji
-                    if stock_type == 'STOCK':
-                        emoji = '📈'
-                    elif stock_type == 'OPTION':
-                        emoji = '🎯'
-                    elif stock_type == 'FUTURE':
-                        emoji = '📊'
-                    elif stock_type == 'INDEX':
-                        emoji = '📍'
-                    else:
-                        emoji = '💼'
-                    
-                    text_output += f"{emoji} {code} - {name}\n"
-                    
-                    # 如果有额外信息，显示一些关键字段
-                    lot_size = stock.get('每手股数')
-                    if lot_size:
-                        text_output += f"     💼 每手: {lot_size}股\n"
-                    
-                    listing_date = stock.get('上市时间')
-                    if listing_date:
-                        text_output += f"     📅 上市: {listing_date}\n"
-                
-                text_output += "\n"
+            return [TextContent(
+                type="text",
+                text=user_securities
+            )]
             
-            # 添加使用提示
-            text_output += "💡 提示:\n"
-            text_output += "• 可以使用 get_stock_quote 获取具体股票的实时报价\n"
-            text_output += "• 可以使用 get_stock_history 查看历史走势\n"
-            text_output += "• 支持的分组: All, US, HK, CN, Options, Futures, Starred 等"
-            
-            return [TextContent(type="text", text=text_output)]
-        
+        # 自选股分组
         elif name == "get_user_security_group":
             group_type = arguments.get("group_type", "ALL")
             
-            # 调用富途客户端获取自选股分组列表
-            security_groups = futu_client.get_user_security_group(group_type)
+            # 调用富途客户端获取分组列表
+            groups = futu_client.get_user_security_group(group_type)
             
-            if not security_groups:
+            if not groups:
                 return [TextContent(
                     type="text",
-                    text=f"❌ 未能获取自选股分组数据\n\n可能原因:\n1. 网络连接问题\n2. 富途客户端未连接\n3. API权限问题"
+                    text=f"❌ 获取分组列表失败"
                 )]
+                
+            return [TextContent(
+                type="text",
+                text=groups
+            )]
             
-            # 格式化输出
-            text_output = f"📂 自选股分组列表\n"
-            text_output += "=" * 50 + "\n\n"
-            text_output += f"🔍 筛选类型: {group_type}\n"
-            text_output += f"📊 共 {len(security_groups)} 个分组\n\n"
-            
-            # 按分组类型分类显示
-            system_groups = [g for g in security_groups if g.get('分组类型') == 'SYSTEM']
-            custom_groups = [g for g in security_groups if g.get('分组类型') == 'CUSTOM']
-            
-            if system_groups:
-                text_output += "🏢 系统分组:\n"
-                text_output += "-" * 30 + "\n"
-                for i, group in enumerate(system_groups, 1):
-                    group_name = group.get('分组名称', '')
-                    # 根据分组名称添加合适的emoji
-                    if '美股' in group_name or 'US' in group_name:
-                        emoji = '🇺🇸'
-                    elif '港股' in group_name or 'HK' in group_name:
-                        emoji = '🇭🇰'
-                    elif '沪深' in group_name or 'CN' in group_name or 'A股' in group_name:
-                        emoji = '🇨🇳'
-                    elif '期权' in group_name or 'Option' in group_name:
-                        emoji = '🎯'
-                    elif '期货' in group_name or 'Future' in group_name:
-                        emoji = '📊'
-                    elif '特别关注' in group_name or 'Starred' in group_name:
-                        emoji = '⭐'
-                    elif '全部' in group_name or 'All' in group_name:
-                        emoji = '📋'
-                    else:
-                        emoji = '📁'
-                    
-                    text_output += f"{emoji} {group_name}\n"
-                text_output += "\n"
-            
-            if custom_groups:
-                text_output += "🎨 自定义分组:\n"
-                text_output += "-" * 30 + "\n"
-                for i, group in enumerate(custom_groups, 1):
-                    group_name = group.get('分组名称', '')
-                    text_output += f"📁 {group_name}\n"
-                text_output += "\n"
-            
-            if not system_groups and not custom_groups:
-                text_output += "📭 暂无分组数据\n\n"
-            
-            # 添加使用提示
-            text_output += "💡 使用提示:\n"
-            text_output += "• 可以使用 get_user_security 查看具体分组的股票列表\n"
-            text_output += "• 系统分组包括：全部、美股、港股、沪深、期权、期货等\n"
-            text_output += "• 自定义分组是用户在富途客户端中创建的分组\n"
-            text_output += f"• 接口限制：30秒内最多请求10次"
-            
-            return [TextContent(type="text", text=text_output)]
-        
+        # 持仓信息
         elif name == "get_positions":
             account_type = arguments.get("account_type", "REAL")
             
+            # 调用富途客户端获取持仓信息
             positions = futu_client.get_positions(account_type)
             
             if not positions:
                 return [TextContent(
                     type="text",
-                    text=f"📊 {account_type} 账户暂无持仓\n\n可能需要设置解锁密码"
+                    text=f"❌ 获取持仓信息失败"
                 )]
-            
-            text_output = f"📊 {account_type} 持仓信息\n"
-            text_output += "=" * 50 + "\n\n"
-            text_output += f"持仓总数: {len(positions)}\n\n"
-            
-            total_pl = 0
-            for i, position in enumerate(positions, 1):
-                code = position.get('股票代码', f'股票{i}')
-                name = position.get('股票名称', '')
-                qty = position.get('持仓数量', 0)
-                cost = position.get('成本价', 0)
-                current = position.get('当前价', 0)
-                pl = position.get('盈亏', 0)
-                pl_ratio = position.get('盈亏比例', '0%')
                 
-                emoji = "📈" if pl > 0 else "📉" if pl < 0 else "➡️"
-                
-                text_output += f"{i}. {code} - {name}\n"
-                text_output += f"   📊 持仓: {qty:,.0f} 股\n"
-                text_output += f"   💰 成本: ${cost:.2f} | 现价: ${current:.2f}\n"
-                text_output += f"   {emoji} 盈亏: ${pl:+,.2f} ({pl_ratio})\n\n"
-                
-                total_pl += pl
+            return [TextContent(
+                type="text",
+                text=positions
+            )]
             
-            text_output += f"💰 总盈亏: ${total_pl:+,.2f}"
-            
-            return [TextContent(type="text", text=text_output)]
-        
+        # 获取快照
         elif name == "get_market_snapshot":
             code_list = arguments.get("code_list", [])
             
-            if not code_list:
-                return [TextContent(
-                    type="text",
-                    text="❌ 请提供股票代码列表"
-                )]
-            
             # 调用富途客户端获取快照数据
-            snapshot_data = futu_client.get_market_snapshot(code_list)
+            snapshot = futu_client.get_market_snapshot(code_list)
             
-            if not snapshot_data or "error" in snapshot_data:
+            if not snapshot:
                 return [TextContent(
                     type="text",
-                    text=f"❌ 获取快照数据失败: {snapshot_data.get('error', '未知错误')}"
+                    text=f"❌ 获取快照数据失败"
+                )]
+                
+            return [TextContent(
+                type="text",
+                text=snapshot
+            )]
+            
+        # 获取K线
+        elif name == "get_history_kline":
+            code = arguments.get("code")
+            start = arguments.get("start")
+            end = arguments.get("end")
+            ktype = arguments.get("ktype", "K_DAY")
+            autype = arguments.get("autype", "QFQ")
+            
+            result = get_history_kline(code, start, end, ktype, autype)
+            return [TextContent(
+                type="text",
+                text=result
+            )]
+            
+        # 获取资金信息
+        elif name == "get_funds":
+            trd_env = arguments.get("trd_env", "REAL")
+            acc_id = arguments.get("acc_id", 0)
+            refresh_cache = arguments.get("refresh_cache", False)
+            
+            # 调用富途客户端获取资金信息
+            funds = futu_client.get_funds(trd_env, acc_id, refresh_cache)
+            
+            if isinstance(funds, dict) and "error" in funds:
+                return [TextContent(
+                    type="text",
+                    text=f"❌ {funds['error']}"
                 )]
             
             # 格式化输出
-            text_output = "📊 市场快照\n"
-            text_output += "=" * 60 + "\n\n"
+            result = "💰 账户资金信息\n" + "=" * 60 + "\n\n"
             
-            snapshots = snapshot_data.get("快照数据", [])
-            text_output += f"共 {len(snapshots)} 个股票的快照数据\n\n"
+            # 总资产信息
+            result += "📊 总资产\n"
+            for key, value in funds.get("总资产", {}).items():
+                result += f"   {key}: {value:,.2f}\n"
             
-            for snapshot in snapshots:
-                code = snapshot.get("股票代码", "")
-                name = snapshot.get("股票名称", "")
-                price = snapshot.get("最新价", 0)
-                change = float(snapshot.get("最新价", 0)) - float(snapshot.get("昨收价", 0))
-                change_ratio = (change / float(snapshot.get("昨收价", 1))) * 100
-                volume = snapshot.get("成交量", 0)
-                turnover = snapshot.get("成交额", 0)
-                
-                # 根据涨跌选择emoji
-                if change > 0:
-                    emoji = "📈"
-                elif change < 0:
-                    emoji = "📉"
+            # 现金信息
+            result += "\n💵 现金信息\n"
+            for currency, info in funds.get("现金信息", {}).items():
+                result += f"   {currency}:\n"
+                for key, value in info.items():
+                    result += f"      {key}: {value:,.2f}\n"
+            
+            # 交易能力
+            result += "\n💪 交易能力\n"
+            for key, value in funds.get("交易能力", {}).items():
+                result += f"   {key}: {value:,.2f}\n"
+            
+            # 风险信息
+            result += "\n⚠️ 风险信息\n"
+            for key, value in funds.get("风险信息", {}).items():
+                if isinstance(value, (int, float)):
+                    result += f"   {key}: {value:,.2f}\n"
                 else:
-                    emoji = "📊"
-                
-                text_output += f"{emoji} {code} - {name}\n"
-                text_output += f"   最新价: {price:.3f} | 涨跌: {change:+.3f} ({change_ratio:+.2f}%)\n"
-                text_output += f"   成交量: {volume:,} | 成交额: {turnover:,.2f}\n"
-                
-                # 添加其他重要指标
-                if snapshot.get("市盈率"):
-                    text_output += f"   市盈率: {snapshot.get('市盈率', 0):.2f}"
-                if snapshot.get("市净率"):
-                    text_output += f" | 市净率: {snapshot.get('市净率', 0):.2f}"
-                if snapshot.get("股息率(TTM)"):
-                    text_output += f" | 股息率: {snapshot.get('股息率(TTM)', '0.00%')}"
-                text_output += "\n"
-                
-                # 添加52周价格区间
-                high_52w = snapshot.get("52周最高价")
-                low_52w = snapshot.get("52周最低价")
-                if high_52w and low_52w:
-                    text_output += f"   52周区间: {low_52w:.3f} - {high_52w:.3f}\n"
-                
-                text_output += "\n"
+                    result += f"   {key}: {value}\n"
             
-            return [TextContent(type="text", text=text_output)]
-        
+            return [TextContent(
+                type="text",
+                text=result
+            )]
+            
         else:
             return [TextContent(
                 type="text",
-                text=f"❌ 未知工具: {name}\n\n可用工具:\n"
-                     f"• get_user_security - 自选股列表\n"
-                     f"• get_user_security_group - 自选股分组\n"
-                     f"• get_account_info - 账户信息\n"
-                     f"• get_positions - 持仓信息\n"
-                     f"• 其他高级功能..."
+                text=f"❌ 未知的工具: {name}"
             )]
-    
+            
     except Exception as e:
-        error_msg = f"调用 {name} 失败: {str(e)}"
-        print(f"❌ {error_msg}", file=sys.stderr)
-        
         return [TextContent(
             type="text",
-            text=f"❌ {error_msg}\n\n请检查富途客户端状态和网络连接"
+            text=f"❌ 工具调用失败: {str(e)}"
         )]
 
 async def run_server():
