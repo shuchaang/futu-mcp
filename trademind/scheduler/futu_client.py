@@ -76,7 +76,7 @@ class FutuClient:
                     try:
                         ret, data = ctx.unlock_trade(self.unlock_pwd)
                         if ret == ft.RET_OK:
-                            logger.info(f"富途{market}交易API解锁成功")
+                            logger.info(f"富途{market}交易API连接成功")
                         else:
                             logger.warning(f"富途{market}交易API解锁失败: {data}")
                     except Exception as e:
@@ -726,4 +726,125 @@ class FutuClient:
             7: "禁卖",
             8: "禁买卖"
         }
-        return status_map.get(status, "未知状态") 
+        return status_map.get(status, "未知状态")
+
+    def place_order(self, price: float, qty: float, code: str, trd_side: str,
+                   order_type: str = "NORMAL", adjust_limit: float = 0,
+                   trd_env: str = "REAL", acc_id: int = 0,
+                   remark: str = None, time_in_force: str = "DAY",
+                   fill_outside_rth: bool = False) -> Dict[str, Any]:
+        """
+        下单
+        
+        Args:
+            price: 订单价格，即使是市价单也需要传入价格（可以是任意值）
+            qty: 订单数量，期权期货单位是"张"
+            code: 股票代码，如 US.AAPL, HK.00700
+            trd_side: 交易方向，BUY买入，SELL卖出，SELL_SHORT卖空，BUY_BACK买回
+            order_type: 订单类型，默认NORMAL正常限价单
+            adjust_limit: 价格微调幅度，正数代表向上调整，负数代表向下调整
+            trd_env: 交易环境，REAL（真实）或 SIMULATE（模拟）
+            acc_id: 交易业务账户ID，默认0表示使用第一个账户
+            remark: 备注，订单会带上此备注字段，方便标识订单
+            time_in_force: 订单有效期，默认DAY当日有效
+            fill_outside_rth: 是否允许盘前盘后成交，用于港股盘前竞价与美股盘前盘后
+            
+        Returns:
+            Dict[str, Any]: 下单结果，包含订单号等信息
+        """
+        try:
+            if not self.trade_ctx:
+                return {"error": "交易API未连接，请先解锁交易"}
+            
+            # 转换交易环境
+            env_map = {
+                "REAL": ft.TrdEnv.REAL,
+                "SIMULATE": ft.TrdEnv.SIMULATE
+            }
+            
+            # 转换交易方向
+            side_map = {
+                "BUY": ft.TrdSide.BUY,
+                "SELL": ft.TrdSide.SELL,
+                "SELL_SHORT": ft.TrdSide.SELL_SHORT,
+                "BUY_BACK": ft.TrdSide.BUY_BACK
+            }
+            
+            # 转换订单类型
+            type_map = {
+                "NORMAL": ft.OrderType.NORMAL,
+                "MARKET": ft.OrderType.MARKET,
+                "ABSOLUTE_LIMIT": ft.OrderType.ABSOLUTE_LIMIT,
+                "AUCTION": ft.OrderType.AUCTION,
+                "AUCTION_LIMIT": ft.OrderType.AUCTION_LIMIT,
+                "SPECIAL_LIMIT": ft.OrderType.SPECIAL_LIMIT
+            }
+            
+            # 转换订单有效期
+            time_map = {
+                "DAY": ft.TimeInForce.DAY,
+                "GTC": ft.TimeInForce.GTC
+            }
+            
+            # 获取市场信息
+            market = code.split('.')[0] if '.' in code else ''
+            if market not in ['HK', 'US', 'SH', 'SZ']:
+                return {"error": "不支持的市场代码"}
+                
+            # 选择对应市场的交易上下文
+            market_map = {
+                'HK': 'HK',
+                'US': 'US',
+                'SH': 'CN',
+                'SZ': 'CN'
+            }
+            trade_ctx = self.trade_ctx.get(market_map[market])
+            if not trade_ctx:
+                return {"error": f"未找到{market}市场的交易上下文"}
+            
+            # 下单
+            ret, data = trade_ctx.place_order(
+                price=price,
+                qty=qty,
+                code=code,
+                trd_side=side_map.get(trd_side),
+                order_type=type_map.get(order_type, ft.OrderType.NORMAL),
+                adjust_limit=adjust_limit,
+                trd_env=env_map.get(trd_env, ft.TrdEnv.REAL),
+                acc_id=acc_id,
+                remark=remark,
+                time_in_force=time_map.get(time_in_force, ft.TimeInForce.DAY),
+                fill_outside_rth=fill_outside_rth
+            )
+            
+            if ret != ft.RET_OK:
+                error_msg = []
+                error_msg.append(f"下单失败: {data}")
+                
+                # 添加市场特定提示
+                if market == 'US':
+                    error_msg.append("请检查美股交易时段（美东时间9:30-16:00）")
+                elif market == 'HK':
+                    error_msg.append("请检查港股交易时段（香港时间9:30-16:00）")
+                elif market in ['SH', 'SZ']:
+                    error_msg.append("请检查A股交易时段（北京时间9:30-15:00）")
+                    
+                return {"error": "\n".join(error_msg)}
+            
+            order_info = {
+                "订单号": str(data.iloc[0].get('order_id', '')),
+                "代码": code,
+                "方向": trd_side,
+                "价格": price,
+                "数量": qty,
+                "类型": order_type,
+                "状态": "已提交",
+                "备注": remark or ""
+            }
+            
+            return {"success": True, "data": order_info}
+            
+        except Exception as e:
+            self.last_error = str(e)
+            logger.error(f"下单失败: {e}")
+            return {"error": str(e)} 

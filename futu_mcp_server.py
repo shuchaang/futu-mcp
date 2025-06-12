@@ -34,9 +34,10 @@ def init_futu_client():
         from trademind.scheduler.futu_client import FutuClient
         
         # 从环境变量获取配置
-        host = os.getenv("FUTU_HOST", "127.0.0.1")
-        port = int(os.getenv("FUTU_PORT", "11111"))
+        host = os.getenv("FUTU_API_HOST", "127.0.0.1")
+        port = int(os.getenv("FUTU_API_PORT", "11111"))
         unlock_pwd = os.getenv("FUTU_UNLOCK_PWD", "")
+        
         
         print(f"🔗 连接富途API: {host}:{port}", file=sys.stderr)
         
@@ -207,6 +208,72 @@ async def list_tools():
                 "additionalProperties": False
             }
         ),
+
+        Tool(
+            name="place_order",
+            description="下单交易，支持股票、期权等品种的买入卖出",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "price": {
+                        "type": "number",
+                        "description": "订单价格，即使是市价单也需要传入价格（可以是任意值）"
+                    },
+                    "qty": {
+                        "type": "number",
+                        "description": "订单数量，期权期货单位是'张'"
+                    },
+                    "code": {
+                        "type": "string",
+                        "description": "股票代码，如 US.AAPL, HK.00700"
+                    },
+                    "trd_side": {
+                        "type": "string",
+                        "description": "交易方向",
+                        "enum": ["BUY", "SELL", "SELL_SHORT", "BUY_BACK"]
+                    },
+                    "order_type": {
+                        "type": "string",
+                        "description": "订单类型",
+                        "enum": ["NORMAL", "MARKET", "ABSOLUTE_LIMIT", "AUCTION", "AUCTION_LIMIT", "SPECIAL_LIMIT"],
+                        "default": "NORMAL"
+                    },
+                    "adjust_limit": {
+                        "type": "number",
+                        "description": "价格微调幅度，正数代表向上调整，负数代表向下调整",
+                        "default": 0
+                    },
+                    "trd_env": {
+                        "type": "string",
+                        "description": "交易环境",
+                        "enum": ["REAL", "SIMULATE"],
+                        "default": "REAL"
+                    },
+                    "acc_id": {
+                        "type": "integer",
+                        "description": "交易业务账户ID，默认0表示使用第一个账户",
+                        "default": 0
+                    },
+                    "remark": {
+                        "type": "string",
+                        "description": "备注，订单会带上此备注字段，方便标识订单"
+                    },
+                    "time_in_force": {
+                        "type": "string",
+                        "description": "订单有效期",
+                        "enum": ["DAY", "GTC"],
+                        "default": "DAY"
+                    },
+                    "fill_outside_rth": {
+                        "type": "boolean",
+                        "description": "是否允许盘前盘后成交，用于港股盘前竞价与美股盘前盘后",
+                        "default": False
+                    }
+                },
+                "required": ["price", "qty", "code", "trd_side"],
+                "additionalProperties": False
+            }
+        ),
     ]
 
 def get_history_kline(code: str, start: str = None, end: str = None, ktype: str = 'K_DAY', autype: str = 'QFQ') -> str:
@@ -331,10 +398,28 @@ async def call_tool(name: str, arguments: dict):
                     type="text",
                     text=f"❌ 获取快照数据失败"
                 )]
+            
+            if "error" in snapshot:
+                return [TextContent(
+                    type="text",
+                    text=f"❌ {snapshot['error']}"
+                )]
                 
+            # 格式化输出
+            result = "📊 股票快照数据\n" + "=" * 60 + "\n\n"
+            
+            for stock in snapshot.get("快照数据", []):
+                result += f"📈 {stock['股票代码']} - {stock['股票名称']}\n"
+                result += f"   最新价: {stock['最新价']:.3f}\n"
+                result += f"   涨跌幅: {((stock['最新价'] - stock['昨收价']) / stock['昨收价'] * 100):.2f}%\n"
+                result += f"   今开: {stock['开盘价']:.3f} | 最高: {stock['最高价']:.3f} | 最低: {stock['最低价']:.3f}\n"
+                result += f"   成交量: {stock['成交量']:,.0f} | 成交额: {stock['成交额']:,.0f}\n"
+                result += f"   换手率: {stock['换手率']}\n"
+                result += f"   市值: {stock['总市值']:,.2f}\n\n"
+            
             return [TextContent(
                 type="text",
-                text=snapshot
+                text=result
             )]
             
         # 获取K线
@@ -397,6 +482,55 @@ async def call_tool(name: str, arguments: dict):
             return [TextContent(
                 type="text",
                 text=result
+            )]
+            
+        # 下单
+        elif name == "place_order":
+            # 提取参数
+            price = arguments.get("price")
+            qty = arguments.get("qty")
+            code = arguments.get("code")
+            trd_side = arguments.get("trd_side")
+            order_type = arguments.get("order_type", "NORMAL")
+            adjust_limit = arguments.get("adjust_limit", 0)
+            trd_env = arguments.get("trd_env", "REAL")
+            acc_id = arguments.get("acc_id", 0)
+            remark = arguments.get("remark")
+            time_in_force = arguments.get("time_in_force", "DAY")
+            fill_outside_rth = arguments.get("fill_outside_rth", False)
+            
+            # 调用富途客户端下单
+            result = futu_client.place_order(
+                price=price,
+                qty=qty,
+                code=code,
+                trd_side=trd_side,
+                order_type=order_type,
+                adjust_limit=adjust_limit,
+                trd_env=trd_env,
+                acc_id=acc_id,
+                remark=remark,
+                time_in_force=time_in_force,
+                fill_outside_rth=fill_outside_rth
+            )
+            
+            if isinstance(result, dict) and "error" in result:
+                return [TextContent(
+                    type="text",
+                    text=f"❌ {result['error']}"
+                )]
+            
+            # 格式化输出
+            order_info = result.get("data", {})
+            output = "🎯 下单成功\n" + "=" * 40 + "\n\n"
+            
+            # 添加订单信息
+            for key, value in order_info.items():
+                output += f"{key}: {value}\n"
+            
+            return [TextContent(
+                type="text",
+                text=output
             )]
             
         else:
