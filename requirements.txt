@@ -16,6 +16,7 @@ python-multipart>=0.0.9
 sse-starlette>=1.6.1
 starlette>=0.27.0
 uvicorn>=0.23.1
+async-timeout>=4.0.0
 
 # 富途MCP服务器依赖包
 
@@ -32,7 +33,6 @@ pandas>=2.0.0
 numpy>=1.24.0
 
 # 异步支持
-asyncio-timeout>=4.0.0
 aiofiles>=23.0.0
 
 # 日志和配置
