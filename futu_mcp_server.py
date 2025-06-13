@@ -532,10 +532,15 @@ async def call_tool(name: str, arguments: dict):
                     type="text",
                     text=f"❌ 获取分组列表失败"
                 )]
-                
+            
+            # 格式化输出
+            result = "📋 自选股分组列表\n" + "=" * 60 + "\n\n"
+            for group in groups:
+                result += f"📁 {group.get('分组名称', '')} ({group.get('分组类型', '')})\n"
+            
             return [TextContent(
                 type="text",
-                text=groups
+                text=result
             )]
             
         # 持仓信息
