@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 import pandas as pd
 from typing import Dict, Any
-
+import futu as ft
 # 添加项目路径
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
@@ -274,6 +274,137 @@ async def list_tools():
                 "additionalProperties": False
             }
         ),
+
+        Tool(
+            name="modify_order",
+            description="改单/撤单，支持修改价格、数量或撤销订单",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "modify_order_op": {"type": "string", "enum": ["NORMAL", "CANCEL"], "description": "操作类型"},
+                    "order_id": {"type": "string", "description": "订单号"},
+                    "qty": {"type": "number", "description": "改单后数量", "default": 0},
+                    "price": {"type": "number", "description": "改单后价格", "default": 0},
+                    "adjust_limit": {"type": "number", "description": "价格微调幅度", "default": 0},
+                    "trd_env": {"type": "string", "enum": ["REAL", "SIMULATE"], "default": "REAL"},
+                    "acc_id": {"type": "integer", "default": 0}
+                },
+                "required": ["modify_order_op", "order_id"],
+                "additionalProperties": False
+            }
+        ),
+
+        Tool(
+            name="get_stock_filter",
+            description="条件选股，支持多种属性和技术指标筛选",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "market": {
+                        "type": "string",
+                        "description": "市场标识",
+                        "enum": ["HK", "US", "SH", "SZ"],
+                        "default": "HK"
+                    },
+                    "filter_list": {
+                        "type": "array",
+                        "description": "筛选条件列表，支持简单条件、财务指标和技术指标",
+                        "items": {
+                            "type": "object",
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {"type": "string", "enum": ["simple"]},
+                                        "filter_min": {"type": "number"},
+                                        "filter_max": {"type": "number"},
+                                        "stock_field": {
+                                            "type": "string",
+                                            "description": "股票字段，如 CUR_PRICE, VOLUME, MARKET_VAL 等"
+                                        },
+                                        "is_no_filter": {"type": "boolean", "default": False},
+                                        "sort": {
+                                            "type": "string",
+                                            "enum": ["ASCEND", "DESCEND"],
+                                            "default": "ASCEND"
+                                        }
+                                    },
+                                    "required": ["type", "filter_min", "filter_max", "stock_field"]
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {"type": "string", "enum": ["financial"]},
+                                        "filter_min": {"type": "number"},
+                                        "filter_max": {"type": "number"},
+                                        "stock_field": {
+                                            "type": "string",
+                                            "description": "财务指标字段，如 CURRENT_RATIO, PE_RATIO 等"
+                                        },
+                                        "is_no_filter": {"type": "boolean", "default": False},
+                                        "sort": {
+                                            "type": "string",
+                                            "enum": ["ASCEND", "DESCEND"],
+                                            "default": "ASCEND"
+                                        },
+                                        "quarter": {
+                                            "type": "string",
+                                            "enum": ["ANNUAL", "QUARTERLY"],
+                                            "default": "ANNUAL"
+                                        }
+                                    },
+                                    "required": ["type", "filter_min", "filter_max", "stock_field"]
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {"type": "string", "enum": ["custom"]},
+                                        "ktype": {
+                                            "type": "string",
+                                            "enum": ["K_DAY", "K_WEEK", "K_MONTH", "K_1M", "K_5M", "K_15M", "K_30M", "K_60M"],
+                                            "default": "K_DAY"
+                                        },
+                                        "stock_field1": {
+                                            "type": "string",
+                                            "description": "第一个技术指标字段，如 MA10, RSI"
+                                        },
+                                        "stock_field2": {
+                                            "type": "string",
+                                            "description": "第二个技术指标字段，如 MA60, PRICE"
+                                        },
+                                        "relative_position": {
+                                            "type": "string",
+                                            "enum": ["MORE", "LESS", "CROSS_UP", "CROSS_DOWN"],
+                                            "description": "两个指标的相对位置关系"
+                                        },
+                                        "is_no_filter": {"type": "boolean", "default": False}
+                                    },
+                                    "required": ["type", "stock_field1", "stock_field2", "relative_position"]
+                                }
+                            ]
+                        }
+                    },
+                    "plate_code": {
+                        "type": "string",
+                        "description": "板块代码，如 'HK.Motherboard'（港股主板）",
+                        "default": None
+                    },
+                    "begin": {
+                        "type": "integer",
+                        "description": "分页起点",
+                        "default": 0
+                    },
+                    "num": {
+                        "type": "integer",
+                        "description": "返回数量，默认200，最大200",
+                        "default": 200,
+                        "maximum": 200
+                    }
+                },
+                "required": ["market", "filter_list"],
+                "additionalProperties": False
+            }
+        ),
     ]
 
 def get_history_kline(code: str, start: str = None, end: str = None, ktype: str = 'K_DAY', autype: str = 'QFQ') -> str:
@@ -315,6 +446,40 @@ def get_history_kline(code: str, start: str = None, end: str = None, ktype: str 
         if "平均换手率" in stats:
             result += f"   平均换手率：{stats.get('平均换手率', 0):.2f}%\n"
 
+        # === MACD详细数据输出 ===
+        tech = kline_data.get("技术指标", {})
+        if tech:
+            # MACD
+            if "macd" in tech:
+                macd = tech["macd"]
+                latest = macd.get("latest", {})
+                signals = macd.get("signals", [])
+                result += "\n📊 MACD 指标：\n"
+                result += f"   最新 DIF: {latest.get('DIF', 0):.4f}\n"
+                result += f"   最新 DEA: {latest.get('DEA', 0):.4f}\n"
+                result += f"   最新 MACD: {latest.get('MACD', 0):.4f}\n"
+                if signals:
+                    result += "   最近5个信号：\n"
+                    for s in signals:
+                        result += f"      {s['date']}: {s['signal']}\n"
+                else:
+                    result += "   最近无明显金叉/死叉信号\n"
+            # 布林带
+            if "boll" in tech:
+                boll = tech["boll"]
+                result += "\n📊 布林带：\n"
+                result += f"   上轨(UP): {boll.get('UP', 0):.3f}\n"
+                result += f"   中轨(MB): {boll.get('MB', 0):.3f}\n"
+                result += f"   下轨(DN): {boll.get('DN', 0):.3f}\n"
+            # 压力/支撑位
+            if "levels" in tech:
+                levels = tech["levels"]
+                result += "\n📊 主要压力/支撑位：\n"
+                result += f"   年内高点: {levels.get('year_high', 0):.3f}\n"
+                result += f"   年内低点: {levels.get('year_low', 0):.3f}\n"
+                result += f"   20日均线: {levels.get('ma20', 0):.3f}\n"
+                result += f"   60日均线: {levels.get('ma60', 0):.3f}\n"
+
         return result
 
     except Exception as e:
@@ -344,10 +509,15 @@ async def call_tool(name: str, arguments: dict):
                     type="text",
                     text=f"❌ 获取自选股列表失败"
                 )]
-                
+            
+            # 格式化输出
+            result = f"📋 自选股列表（分组：{group_name}）\n" + "=" * 60 + "\n\n"
+            for stock in user_securities:
+                result += f"{stock.get('股票代码', '')} - {stock.get('股票名称', '')} | 市场: {stock.get('市场', '')} | 每手: {stock.get('每手股数', '')}\n"
+            
             return [TextContent(
                 type="text",
-                text=user_securities
+                text=result
             )]
             
         # 自选股分组
@@ -527,6 +697,109 @@ async def call_tool(name: str, arguments: dict):
             # 添加订单信息
             for key, value in order_info.items():
                 output += f"{key}: {value}\n"
+            
+            return [TextContent(
+                type="text",
+                text=output
+            )]
+            
+        # 改单/撤单
+        elif name == "modify_order":
+            modify_order_op = arguments.get("modify_order_op")
+            order_id = arguments.get("order_id")
+            qty = arguments.get("qty", 0)
+            price = arguments.get("price", 0)
+            adjust_limit = arguments.get("adjust_limit", 0)
+            trd_env = arguments.get("trd_env", "REAL")
+            acc_id = arguments.get("acc_id", 0)
+            result = futu_client.modify_order(modify_order_op, order_id, qty, price, adjust_limit, trd_env, acc_id)
+            if isinstance(result, dict) and "error" in result:
+                return [TextContent(type="text", text=f"❌ {result['error']}")]
+            return [TextContent(type="text", text=f"✅ 改单/撤单成功: {result}")]
+            
+        # 条件选股
+        elif name == "get_stock_filter":
+            # 提取参数
+            market = arguments.get("market")
+            filter_list = arguments.get("filter_list", [])
+            plate_code = arguments.get("plate_code")
+            begin = arguments.get("begin", 0)
+            num = arguments.get("num", 200)
+            
+            # 转换筛选条件
+            converted_filters = []
+            for filter_data in filter_list:
+                filter_type = filter_data.get("type", "simple")
+                
+                if filter_type == "simple":
+                    f = ft.SimpleFilter()
+                    f.filter_min = filter_data.get("filter_min")
+                    f.filter_max = filter_data.get("filter_max")
+                    f.stock_field = getattr(ft.StockField, filter_data.get("stock_field", ""))
+                    f.is_no_filter = filter_data.get("is_no_filter", False)
+                    if "sort" in filter_data:
+                        f.sort = getattr(ft.SortDir, filter_data.get("sort", ""))
+                    converted_filters.append(f)
+                    
+                elif filter_type == "financial":
+                    f = ft.FinancialFilter()
+                    f.filter_min = filter_data.get("filter_min")
+                    f.filter_max = filter_data.get("filter_max")
+                    f.stock_field = getattr(ft.StockField, filter_data.get("stock_field", ""))
+                    f.is_no_filter = filter_data.get("is_no_filter", False)
+                    if "sort" in filter_data:
+                        f.sort = getattr(ft.SortDir, filter_data.get("sort", ""))
+                    f.quarter = getattr(ft.FinancialQuarter, filter_data.get("quarter", "ANNUAL"))
+                    converted_filters.append(f)
+                    
+                elif filter_type == "custom":
+                    f = ft.CustomIndicatorFilter()
+                    f.ktype = getattr(ft.KLType, filter_data.get("ktype", "K_DAY"))
+                    f.stock_field1 = getattr(ft.StockField, filter_data.get("stock_field1", ""))
+                    f.stock_field2 = getattr(ft.StockField, filter_data.get("stock_field2", ""))
+                    f.relative_position = getattr(ft.RelativePosition, filter_data.get("relative_position", ""))
+                    f.is_no_filter = filter_data.get("is_no_filter", False)
+                    converted_filters.append(f)
+            
+            # 调用富途客户端进行条件选股
+            result = futu_client.get_stock_filter(
+                market=getattr(ft.Market, market, ft.Market.HK),
+                filter_list=converted_filters,
+                plate_code=plate_code,
+                begin=begin,
+                num=num
+            )
+            
+            if isinstance(result, dict) and "error" in result:
+                return [TextContent(
+                    type="text",
+                    text=f"❌ {result['error']}"
+                )]
+            
+            # 格式化输出
+            output = "🔍 条件选股结果\n" + "=" * 40 + "\n\n"
+            
+            if not result:
+                output += "未找到符合条件的股票"
+            else:
+                output += f"共找到 {len(result)} 只股票：\n\n"
+                for stock in result:
+                    output += f"📈 {stock['code']} - {stock['name']}\n"
+                    
+                    # 添加筛选条件的值
+                    for filter_data in filter_list:
+                        if filter_data.get("type") == "simple":
+                            field = filter_data.get("stock_field", "")
+                            if field in stock:
+                                output += f"   {field}: {stock[field]}\n"
+                        elif filter_data.get("type") == "financial":
+                            field = filter_data.get("stock_field", "")
+                            if field in stock:
+                                output += f"   {field}: {stock[field]}\n"
+                        elif filter_data.get("type") == "custom":
+                            if "custom_indicator" in stock:
+                                output += f"   技术指标: {stock['custom_indicator']}\n"
+                    output += "\n"
             
             return [TextContent(
                 type="text",

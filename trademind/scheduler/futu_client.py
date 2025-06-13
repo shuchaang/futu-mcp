@@ -7,9 +7,12 @@
 """
 
 import logging
+import time
 from typing import Dict, List, Optional, Any, Union, Callable
 import futu as ft
 from datetime import datetime, timedelta
+import pandas as pd
+from futu import ModifyOrderOp, TrdEnv
 
 logger = logging.getLogger(__name__)
 
@@ -592,6 +595,51 @@ class FutuClient:
                 
                 klines.append(kline_info)
             
+            # === 技术指标计算 ===
+            tech = {}
+            if len(klines) >= 26:
+                df = pd.DataFrame(klines)
+                df['EMA12'] = df['收盘'].ewm(span=12, adjust=False).mean()
+                df['EMA26'] = df['收盘'].ewm(span=26, adjust=False).mean()
+                df['DIF'] = df['EMA12'] - df['EMA26']
+                df['DEA'] = df['DIF'].ewm(span=9, adjust=False).mean()
+                df['MACD'] = 2 * (df['DIF'] - df['DEA'])
+                # MACD信号
+                macd_signals = []
+                for i in range(1, len(df)):
+                    if df['DIF'].iloc[i-1] < df['DEA'].iloc[i-1] and df['DIF'].iloc[i] > df['DEA'].iloc[i]:
+                        macd_signals.append({'date': df['时间'].iloc[i], 'signal': '金叉'})
+                    elif df['DIF'].iloc[i-1] > df['DEA'].iloc[i-1] and df['DIF'].iloc[i] < df['DEA'].iloc[i]:
+                        macd_signals.append({'date': df['时间'].iloc[i], 'signal': '死叉'})
+                # 布林带
+                df['MB'] = df['收盘'].rolling(window=20).mean()
+                df['STD'] = df['收盘'].rolling(window=20).std()
+                df['UP'] = df['MB'] + 2 * df['STD']
+                df['DN'] = df['MB'] - 2 * df['STD']
+                # 压力/支撑位
+                levels = {
+                    'year_high': df['最高'].max(),
+                    'year_low': df['最低'].min(),
+                    'ma20': df['收盘'].rolling(window=20).mean().iloc[-1],
+                    'ma60': df['收盘'].rolling(window=60).mean().iloc[-1]
+                }
+                tech = {
+                    'macd': {
+                        'latest': {
+                            'DIF': df['DIF'].iloc[-1],
+                            'DEA': df['DEA'].iloc[-1],
+                            'MACD': df['MACD'].iloc[-1]
+                        },
+                        'signals': macd_signals[-5:]
+                    },
+                    'boll': {
+                        'UP': df['UP'].iloc[-1],
+                        'MB': df['MB'].iloc[-1],
+                        'DN': df['DN'].iloc[-1]
+                    },
+                    'levels': levels
+                }
+
             # 计算统计数据
             if klines:
                 first_kline = klines[0]
@@ -618,7 +666,8 @@ class FutuClient:
                     "K线类型": ktype,
                     "复权类型": autype,
                     "统计数据": stats,
-                    "K线数据": klines
+                    "K线数据": klines,
+                    "技术指标": tech
                 }
             else:
                 return {"error": "未获取到K线数据"}
@@ -847,4 +896,111 @@ class FutuClient:
         except Exception as e:
             self.last_error = str(e)
             logger.error(f"下单失败: {e}")
+            return {"error": str(e)}
+
+    def modify_order(self, modify_order_op, order_id, qty=0, price=0, adjust_limit=0, trd_env="REAL", acc_id=0):
+        op_map = {"NORMAL": ModifyOrderOp.NORMAL, "CANCEL": ModifyOrderOp.CANCEL}
+        env_map = {"REAL": TrdEnv.REAL, "SIMULATE": TrdEnv.SIMULATE}
+        try:
+            ctx = self.trade_ctx['HK']  # 这里只以港股为例，如需支持美股/其他市场可扩展
+            ret, data = ctx.modify_order(
+                modify_order_op=op_map.get(modify_order_op, ModifyOrderOp.NORMAL),
+                order_id=order_id,
+                qty=qty,
+                price=price,
+                adjust_limit=adjust_limit,
+                trd_env=env_map.get(trd_env, TrdEnv.REAL),
+                acc_id=acc_id
+            )
+            if ret == 0:
+                return data.to_dict(orient='records')
+            else:
+                return {"error": str(data)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_stock_filter(self, market, filter_list, plate_code=None, begin=0, num=200):
+        """
+        条件选股，filter_list 必须为 futu.SimpleFilter 对象列表，stock_field 用 StockField 枚举。
+        Args:
+            market: str 或 futu.Market，如 'HK'/'US'/'SH'/'SZ' 或对应的 futu.Market 枚举
+            filter_list: [futu.SimpleFilter, ...]，stock_field 必须用 futu.StockField 枚举
+            plate_code: 板块代码，可选，如 'HK.Motherboard'（港股主板）
+            begin: 起始序号，默认0
+            num: 返回数量，默认200，最大200
+        Returns:
+            list[dict] or {"error": str}
+        """
+        import futu as ft
+        try:
+            if not self.quote_ctx:
+                return {"error": "行情API未连接"}
+
+            # 验证 filter_list 中的元素类型
+            for f in filter_list:
+                if not isinstance(f, (ft.SimpleFilter, ft.FinancialFilter, ft.CustomIndicatorFilter)):
+                    return {"error": "filter_list 内元素必须为 SimpleFilter、FinancialFilter 或 CustomIndicatorFilter 对象"}
+
+            # 初始化结果列表
+            all_results = []
+            current_begin = begin
+            last_page = False
+
+            while not last_page and (num == 0 or len(all_results) < num):
+                # 计算本次请求数量
+                request_num = num - len(all_results) if num > 0 else 200
+                request_num = min(request_num, 200)  # 每次最多请求200条
+
+                # 发起请求
+                ret, data = self.quote_ctx.get_stock_filter(
+                    market=market,
+                    filter_list=filter_list,
+                    plate_code=plate_code,
+                    begin=current_begin,
+                    num=request_num
+                )
+
+                if ret != ft.RET_OK:
+                    return {"error": str(data)}
+
+                # 解析返回数据
+                last_page, all_count, stock_list = data
+
+                # 处理本页数据
+                for stock in stock_list:
+                    # 构建基本信息
+                    stock_dict = {
+                        'code': stock.stock_code,  # 股票代码
+                        'name': stock.stock_name,  # 股票名称
+                        'market': market  # 市场
+                    }
+
+                    # 添加筛选字段的值
+                    for f in filter_list:
+                        if isinstance(f, ft.SimpleFilter):
+                            stock_dict[ft.StockField.to_string(f.stock_field)] = stock[f]
+                        elif isinstance(f, ft.FinancialFilter):
+                            stock_dict[ft.StockField.to_string(f.stock_field)] = stock[f]
+                        elif isinstance(f, ft.CustomIndicatorFilter):
+                            stock_dict['custom_indicator'] = stock[f]
+
+                    all_results.append(stock_dict)
+
+                # 更新开始位置
+                current_begin += len(stock_list)
+
+                # 如果达到请求数量或者是最后一页，结束循环
+                if num > 0 and len(all_results) >= num:
+                    break
+                if last_page:
+                    break
+
+                # 添加延时避免触发限频
+                time.sleep(3)
+
+            return all_results
+
+        except Exception as e:
+            self.last_error = str(e)
+            logger.error(f"条件选股失败: {e}")
             return {"error": str(e)} 
